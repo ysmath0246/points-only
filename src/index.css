@@ -1,0 +1,42 @@
+/* src/index.css */
+:root {
+  --green-bg: #e7f7ec;
+  --green-ring: #22c55e33;
+  --orange-bg: #fff1e6;
+  --orange-ring: #f59e0b55;
+  --red-bg: #fee2e2;
+  --red-ring: #ef444466;
+  --blue-bg: #e0f2fe;
+  --blue-ring: #0ea5e955;
+  --border: #d1d5db;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:#fafafa; color:#111; }
+
+.container { max-width: 1100px; margin: 32px auto; padding: 0 16px; }
+.h1 { font-size: 22px; font-weight: 800; margin-bottom: 16px; }
+
+.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.btn { padding: 8px 12px; border:1px solid var(--border); background:#fff; border-radius: 8px; cursor: pointer; }
+.btn:hover { background:#f3f4f6; }
+.btn.destructive { border-color:#ef4444; color:#ef4444; }
+.btn.outline { background:#fff; }
+.select { padding: 8px 10px; border:1px solid var(--border); border-radius:8px; }
+
+.card { background:#fff; border:1px solid var(--border); border-radius:12px; padding:16px; }
+.table { width:100%; border-collapse: collapse; }
+.table th, .table td { border-top: 1px solid #eee; padding: 8px 10px; text-align: left; }
+.table th { background:#f9fafb; }
+
+.grid { display:grid; grid-template-columns: 1fr; gap: 16px; }
+@media (min-width: 900px){
+  .grid { grid-template-columns: 1fr 1fr; }
+}
+
+.badge { display:inline-block; padding:2px 6px; border-radius: 6px; font-size: 12px; background:#f3f4f6; border:1px solid #e5e7eb; }
+
+/* 카드 상태 (참고: 출석앱 색) */
+.card--green { background: var(--green-bg); box-shadow: 0 0 0 2px var(--green-ring); }
+.card--orange { background: var(--orange-bg); box-shadow: 0 0 0 2px var(--orange-ring); }
+.card--red { background: var(--red-bg); box-shadow: 0 0 0 2px var(--red-ring); }
+.card--blue { background: var(--blue-bg); box-shadow: 0 0 0 2px var(--blue-ring); }
