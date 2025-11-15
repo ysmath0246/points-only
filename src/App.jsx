@@ -138,6 +138,56 @@ useEffect(() => {
 }, [students, selectedStudent]);
 
 
+// =====================
+// books 동시 반영 유틸
+// (루트 books + books_student/{sid}/books)
+// =====================
+const upsertBookBoth = async ({ id, studentId, payload }) => {
+  // 1) 루트 books
+  if (id) {
+    await updateDoc(doc(db, 'books', id), payload);
+  } else {
+    const ref = await addDoc(collection(db, 'books'), payload);
+    id = ref.id;
+  }
+  // 2) per-student books
+  if (studentId) {
+    await setDoc(
+      doc(db, 'books_student', studentId, 'books', id),
+      {
+        ...payload,
+        studentId,
+        rootPath: `books/${id}`,
+        migratedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+  }
+  return id;
+};
+
+const deleteBookBoth = async (book) => {
+  const id = book.id;
+  const sid = book.studentId || '';
+  try { await deleteDoc(doc(db, 'books', id)); } catch (_) {}
+  try { if (sid) await deleteDoc(doc(db, 'books_student', sid, 'books', id)); } catch (_) {}
+};
+
+const handleEditBook = async (book) => {
+  const newTitle = prompt('책 제목', book.title);
+  const newGrade = prompt('학년', book.grade);
+  const newDate  = prompt('완료일 (YYYY-MM-DD)', book.completedDate);
+  if (!newTitle || !newGrade || !newDate) return;
+
+  await upsertBookBoth({
+    id: book.id,
+    studentId: book.studentId,
+    payload: { title: newTitle, grade: newGrade, completedDate: newDate }
+  });
+
+  alert('책 정보가 수정되었습니다.');
+};
+
 
   // ── 유틸
   const getTotal = (s) =>
@@ -815,25 +865,24 @@ if (!authed) {
           <button
             className="btn"
             onClick={async () => {
-              if (!selectedStudent) {
-                alert('왼쪽에서 학생을 먼저 선택하세요!');
-                return;
-              }
-              if (!bookTitle || !bookGrade) {
-                alert('책 이름과 학년을 입력하세요!');
-                return;
-              }
-              await addDoc(collection(db, 'books'), {
-                studentId: selectedStudent.id,
-                name: selectedStudent.name,
-                title: bookTitle,
-                grade: bookGrade,
-                completedDate: bookCompletedDate,
-              });
-              setBookTitle('');
-              setBookGrade('');
-              alert('저장되었습니다!');
-            }}
+  if (!selectedStudent) return alert('왼쪽에서 학생을 먼저 선택하세요!');
+  if (!bookTitle || !bookGrade) return alert('책 이름과 학년을 입력하세요!');
+
+  const payload = {
+    studentId: selectedStudent.id,
+    name: selectedStudent.name,
+    title: bookTitle,
+    grade: bookGrade,
+    completedDate: bookCompletedDate,
+  };
+
+  await upsertBookBoth({ id: null, studentId: selectedStudent.id, payload });
+
+  setBookTitle('');
+  setBookGrade('');
+  alert('저장되었습니다!');
+}}
+
           >
             저장
           </button>
@@ -864,7 +913,7 @@ if (!authed) {
                       className="btn destructive"
                       onClick={async () => {
                         if (window.confirm('삭제하시겠습니까?')) {
-                          await deleteDoc(doc(db, 'books', book.id));
+                          await deleteBookBoth(book);
                         }
                       }}
                     >
