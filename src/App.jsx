@@ -23,6 +23,28 @@ function addDaysStr(yyyyMMdd, deltaDays) {
   return base.toISOString().slice(0,10);
 }
 
+// ✅ 학원 시간표 순서 커스텀 (원장님 학원에 맞게 여기만 수정하면 됨!)
+const ACADEMY_TIME_ORDER = [
+  '13:00','13:30',
+  '14:00','14:30',
+  '15:00','15:30',
+  '16:00','16:30',
+  '17:00','17:30',
+  '18:00','18:30',
+  '19:00','19:30',
+  '20:00','20:30',
+  '21:00','21:30',
+  '22:00'
+];
+const TIME_ORDER_MAP = Object.fromEntries(ACADEMY_TIME_ORDER.map((t, i) => [t, i]));
+
+function timeToMinutes(t) {
+  if (!t || typeof t !== 'string') return Number.POSITIVE_INFINITY;
+  const [hh, mm] = t.split(':').map(Number);
+  if (Number.isNaN(hh) || Number.isNaN(mm)) return Number.POSITIVE_INFINITY;
+  return hh * 60 + mm;
+}
+
 export default function App() {
 
   // ① 게이트 상태
@@ -64,6 +86,10 @@ export default function App() {
   // ✅ 학생 검색(포인트/완북 각각)
   const [studentSearchPoints, setStudentSearchPoints] = useState('');
   const [studentSearchBooks, setStudentSearchBooks]   = useState('');
+
+  // ✅ 포인트탭: 요일/시간 필터
+  const [selectedDaysPoints, setSelectedDaysPoints] = useState([]); // ['월','화'...]
+  const [groupByTimePoints, setGroupByTimePoints] = useState(false); // 시간대별 묶기
 
   // ✅ 포인트사용내역 날짜(기본: 오늘)
   const [logsDate, setLogsDate] = useState(todayString());
@@ -219,18 +245,81 @@ export default function App() {
     [students]
   );
 
+  // ✅ 요일/시간 유틸
+  const DAY_LABELS = ['월','화','수','목','금','토','일'];
+
+  const getStudentSchedules = (s) => Array.isArray(s.schedules) ? s.schedules : [];
+
+  const hasAnyDay = (s, days) => {
+    if (!days.length) return true; // 아무 요일도 체크 안하면 전체
+    return getStudentSchedules(s).some(sc => days.includes(sc.day));
+  };
+
+  const getTimesForSelectedDays = (s, days) => {
+    const arr = getStudentSchedules(s)
+      .filter(sc => !days.length || days.includes(sc.day))
+      .map(sc => sc.time)
+      .filter(Boolean);
+    return Array.from(new Set(arr)); // 중복 제거
+  };
+
   // ✅ 검색 적용된 학생 리스트(포인트/완북)
   const filteredStudentsPoints = useMemo(() => {
     const q = studentSearchPoints.trim().toLowerCase();
-    if (!q) return sortedStudents;
-    return sortedStudents.filter(s => (s.name || '').toLowerCase().includes(q));
-  }, [sortedStudents, studentSearchPoints]);
+
+    return sortedStudents
+      .filter(s => {
+        if (q && !(s.name || '').toLowerCase().includes(q)) return false;
+        if (!hasAnyDay(s, selectedDaysPoints)) return false;
+        return true;
+      });
+  }, [sortedStudents, studentSearchPoints, selectedDaysPoints]);
 
   const filteredStudentsBooks = useMemo(() => {
     const q = studentSearchBooks.trim().toLowerCase();
     if (!q) return sortedStudents;
     return sortedStudents.filter(s => (s.name || '').toLowerCase().includes(q));
   }, [sortedStudents, studentSearchBooks]);
+
+  // ✅ 포인트탭: 시간대별 그룹 (학원시간표 순서 적용)
+  const groupedStudentsPointsByTime = useMemo(() => {
+    const map = {}; // { "13:00": [s1,s2], ... }
+
+    filteredStudentsPoints.forEach(s => {
+      const times = getTimesForSelectedDays(s, selectedDaysPoints);
+      if (!times.length) {
+        (map['(시간없음)'] ||= []).push(s);
+        return;
+      }
+      times.forEach(t => {
+        (map[t] ||= []).push(s);
+      });
+    });
+
+    // 키 정렬: 1) 커스텀 순서 2) 시간 파싱 3) 문자열
+    const keys = Object.keys(map).sort((a, b) => {
+      const ia = TIME_ORDER_MAP[a];
+      const ib = TIME_ORDER_MAP[b];
+      const aIn = Number.isFinite(ia);
+      const bIn = Number.isFinite(ib);
+      if (aIn && bIn) return ia - ib;
+      if (aIn && !bIn) return -1;
+      if (!aIn && bIn) return 1;
+
+      // 둘 다 커스텀에 없으면 시간 파싱해서 정렬
+      const ma = timeToMinutes(a);
+      const mb = timeToMinutes(b);
+      if (ma !== mb) return ma - mb;
+
+      return String(a).localeCompare(String(b));
+    });
+
+    const ordered = {};
+    keys.forEach(k => {
+      ordered[k] = map[k].slice().sort((x,y)=> (x.name||'').localeCompare(y.name||''));
+    });
+    return ordered;
+  }, [filteredStudentsPoints, selectedDaysPoints]);
 
   // ─────────────────────────────────────────
   // 포인트 증감/가용 조정
@@ -579,6 +668,59 @@ export default function App() {
               <div className="muted">{filteredStudentsPoints.length}명</div>
             </div>
 
+            {/* ✅ 요일 필터 + 시간대별 보기 */}
+            <div className="card" style={{ padding:10, marginBottom:10 }}>
+              <div className="row" style={{ justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                <div className="badge">요일 필터</div>
+                <button
+                  className="btn outline"
+                  onClick={() => setSelectedDaysPoints([])}
+                  title="요일 전체 보기"
+                >
+                  전체
+                </button>
+              </div>
+
+              <div className="row" style={{ gap:8, flexWrap:'wrap' }}>
+                {DAY_LABELS.map(d => {
+                  const active = selectedDaysPoints.includes(d);
+                  return (
+                    <button
+                      key={d}
+                      className="btn"
+                      style={{
+                        padding:'6px 10px',
+                        fontWeight: active ? 800 : 500,
+                        opacity: active ? 1 : 0.7
+                      }}
+                      onClick={() => {
+                        setSelectedDaysPoints(prev => (
+                          prev.includes(d) ? prev.filter(x=>x!==d) : [...prev, d]
+                        ));
+                      }}
+                    >
+                      {d}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="row" style={{ justifyContent:'space-between', alignItems:'center', marginTop:10 }}>
+                <div className="muted" style={{ fontSize:12 }}>
+                  {selectedDaysPoints.length ? `선택: ${selectedDaysPoints.join(', ')}` : '전체 요일'}
+                </div>
+
+                <label className="row" style={{ gap:8, alignItems:'center', cursor:'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={groupByTimePoints}
+                    onChange={(e)=>setGroupByTimePoints(e.target.checked)}
+                  />
+                  <span style={{ fontSize:13 }}>시간대별로 보기</span>
+                </label>
+              </div>
+            </div>
+
             <input
               className="select"
               placeholder="학생 검색 (이름)"
@@ -587,26 +729,62 @@ export default function App() {
               style={{ marginBottom:10 }}
             />
 
-            <ul className="column" style={{ gap:8 }}>
-              {filteredStudentsPoints.map(s => (
-                <li key={s.id}>
-                  <button
-                    className="btn"
-                    style={{
-                      width:'100%',
-                      justifyContent:'space-between',
-                      fontWeight: selectedStudent?.id === s.id ? 700 : 500
-                    }}
-                    onClick={() => { setSelectedStudent(s); setPointLogsPage(1); }}
-                  >
-                    <span>{s.name}</span>
-                  </button>
-                </li>
-              ))}
-              {filteredStudentsPoints.length === 0 && (
-                <li className="muted" style={{ padding:'8px 0' }}>검색 결과가 없습니다.</li>
-              )}
-            </ul>
+            {/* ✅ 학생 목록: 기본 / 시간대별 그룹 */}
+            {!groupByTimePoints ? (
+              <ul className="column" style={{ gap:8 }}>
+                {filteredStudentsPoints.map(s => (
+                  <li key={s.id}>
+                    <button
+                      className="btn"
+                      style={{
+                        width:'100%',
+                        justifyContent:'space-between',
+                        fontWeight: selectedStudent?.id === s.id ? 700 : 500
+                      }}
+                      onClick={() => { setSelectedStudent(s); setPointLogsPage(1); }}
+                    >
+                      <span>{s.name}</span>
+                    </button>
+                  </li>
+                ))}
+                {filteredStudentsPoints.length === 0 && (
+                  <li className="muted" style={{ padding:'8px 0' }}>검색 결과가 없습니다.</li>
+                )}
+              </ul>
+            ) : (
+              <div className="column" style={{ gap:12 }}>
+                {Object.keys(groupedStudentsPointsByTime).map(timeKey => (
+                  <div key={timeKey} className="card" style={{ padding:10 }}>
+                    <div className="row" style={{ justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                      <div className="badge">{timeKey}</div>
+                      <div className="muted">{groupedStudentsPointsByTime[timeKey].length}명</div>
+                    </div>
+
+                    <ul className="column" style={{ gap:8 }}>
+                      {groupedStudentsPointsByTime[timeKey].map(s => (
+                        <li key={`${timeKey}-${s.id}`}>
+                          <button
+                            className="btn"
+                            style={{
+                              width:'100%',
+                              justifyContent:'space-between',
+                              fontWeight: selectedStudent?.id === s.id ? 700 : 500
+                            }}
+                            onClick={() => { setSelectedStudent(s); setPointLogsPage(1); }}
+                          >
+                            <span>{s.name}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+
+                {Object.keys(groupedStudentsPointsByTime).length === 0 && (
+                  <div className="muted" style={{ padding:'8px 0' }}>검색 결과가 없습니다.</div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* ── 우측: 상단 포인트 조정 + 하단 사용내역(10개씩) ───────────────── */}
@@ -810,6 +988,8 @@ export default function App() {
           </div>
         </div>
       )}
+
+   
 
       {/* ── 상점 사용 모달 */}
       {modalOpen && (
